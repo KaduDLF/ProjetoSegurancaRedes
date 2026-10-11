@@ -15,7 +15,7 @@ Simular uma rede segmentada com cliente, firewall, DMZ, servidor web e, em uma p
 
 O cliente usa Alpine com curl, nmap e iproute2. O firewall usa Alpine com iptables e iproute2. O servidor web usa Nginx com uma página simples.
 
-As duas redes são internas ao laboratório. O cliente tem uma rota para a DMZ pelo firewall, e o servidor web tem a rota de volta pelo mesmo firewall. Não publicamos a porta do servidor no computador, pois o teste desta etapa deve ser feito pelo cliente.
+As duas redes usam bridges separadas. Não usamos `internal: true`, pois o isolamento dessa opção pode bloquear os pacotes destinados à outra sub-rede antes de chegarem ao container firewall. As bridges permitem saída pelo gateway do Docker; as regras desta etapa controlam o tráfego entre cliente e DMZ. O cliente tem uma rota para a DMZ pelo firewall, e o servidor web tem a rota de volta pelo mesmo firewall. Não publicamos a porta do servidor no computador, pois o teste desta etapa deve ser feito pelo cliente.
 
 O firewall permite HTTP do cliente para o servidor web e as respostas das conexões autorizadas. Os outros encaminhamentos são bloqueados. As políticas INPUT e OUTPUT do próprio firewall continuam no padrão; nesta etapa estamos filtrando o tráfego que passa entre as redes.
 
@@ -35,6 +35,18 @@ O Compose espera o firewall aplicar as regras e o Nginx responder antes de inici
 A permissão NET_ADMIN permite configurar as rotas e o iptables. O encaminhamento IPv4 é habilitado pelo sysctl do Compose. O Dockerfile do firewall corrige as quebras de linha do script para funcionar também quando o projeto é baixado no Windows.
 
 Se o Docker informar que uma sub-rede já está em uso, confira as redes existentes com `docker network ls`. Ao mudar os endereços do laboratório, atualize também as rotas e as regras do firewall.
+
+## Atualização das redes
+
+Após uma alteração nas opções das redes, recrie o laboratório:
+
+```sh
+git pull origin main
+docker compose down
+docker compose up -d --build
+```
+
+O comando down remove os containers e as redes deste Compose, que serão recriados pelo up.
 
 ## Testes
 
