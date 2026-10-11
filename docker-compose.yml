@@ -1,0 +1,64 @@
+services:
+  client:
+    build: ./client
+    cap_add:
+      - NET_ADMIN
+    depends_on:
+      firewall:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    # A rede da DMZ é alcançada pelo firewall, e não pelo gateway do Docker.
+    command: ["sh", "-c", "ip route replace 172.21.0.0/24 via 172.20.0.2 && exec tail -f /dev/null"]
+    networks:
+      rede_cliente:
+        ipv4_address: 172.20.0.10
+
+  firewall:
+    build: ./firewall
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      net.ipv4.ip_forward: "1"
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/firewall-pronto"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+    networks:
+      rede_cliente:
+        ipv4_address: 172.20.0.2
+      dmz:
+        ipv4_address: 172.21.0.2
+
+  web:
+    build: ./web
+    cap_add:
+      - NET_ADMIN
+    depends_on:
+      firewall:
+        condition: service_healthy
+    # A resposta ao cliente também precisa passar pelo firewall.
+    command: ["sh", "-c", "ip route replace 172.20.0.0/24 via 172.21.0.2 && exec nginx -g 'daemon off;'"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+    networks:
+      dmz:
+        ipv4_address: 172.21.0.10
+
+networks:
+  rede_cliente:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+  dmz:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.21.0.0/24
