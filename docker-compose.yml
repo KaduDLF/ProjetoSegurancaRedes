@@ -9,7 +9,7 @@ services:
       web:
         condition: service_healthy
     # A rede da DMZ é alcançada pelo firewall, e não pelo gateway do Docker.
-    command: ["sh", "-c", "ip route replace 172.21.0.0/24 via 172.20.0.2 && exec tail -f /dev/null"]
+    command: ["sh", "-c", "ip route replace 172.21.0.0/24 via 172.20.0.2 && ip route replace 172.22.0.0/24 via 172.20.0.2 && exec tail -f /dev/null"]
     networks:
       rede_cliente:
         ipv4_address: 172.20.0.10
@@ -30,16 +30,27 @@ services:
         ipv4_address: 172.20.0.2
       dmz:
         ipv4_address: 172.21.0.2
+      rede_banco:
+        ipv4_address: 172.22.0.2
 
   web:
     build: ./web
+    environment:
+      PGHOST: 172.22.0.10
+      PGPORT: "5432"
+      PGDATABASE: seguranca
+      PGUSER: aluno
+      PGPASSWORD: ${DB_PASSWORD:-senha_laboratorio}
+      PGCONNECT_TIMEOUT: "5"
     cap_add:
       - NET_ADMIN
     depends_on:
       firewall:
         condition: service_healthy
+      db:
+        condition: service_healthy
     # A resposta ao cliente também precisa passar pelo firewall.
-    command: ["sh", "-c", "ip route replace 172.20.0.0/24 via 172.21.0.2 && exec nginx -g 'daemon off;'"]
+    command: ["sh", "-c", "ip route replace 172.20.0.0/24 via 172.21.0.2 && ip route replace 172.22.0.0/24 via 172.21.0.2 && exec nginx -g 'daemon off;'"]
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1"]
       interval: 2s
@@ -48,6 +59,29 @@ services:
     networks:
       dmz:
         ipv4_address: 172.21.0.10
+
+  db:
+    build: ./db
+    cap_add:
+      - NET_ADMIN
+    environment:
+      POSTGRES_DB: seguranca
+      POSTGRES_USER: aluno
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-senha_laboratorio}
+    depends_on:
+      firewall:
+        condition: service_healthy
+    volumes:
+      - dados_banco:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "aluno", "-d", "seguranca"]
+      interval: 3s
+      timeout: 3s
+      start_period: 20s
+      retries: 20
+    networks:
+      rede_banco:
+        ipv4_address: 172.22.0.10
 
 networks:
   rede_cliente:
@@ -60,3 +94,11 @@ networks:
     ipam:
       config:
         - subnet: 172.21.0.0/24
+  rede_banco:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.22.0.0/24
+
+volumes:
+  dados_banco:
