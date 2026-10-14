@@ -1,8 +1,8 @@
 # Relatório Técnico — Segmentação de Rede e Firewall Linux
 
-Integrantes: preencher.
+Aluno: Carlos Eduardo De Oliveira Silva.
 Disciplina: Segurança da Informação.
-Professor: preencher.
+Professor: Roitier.
 
 ## 1. Definição do Case
 
