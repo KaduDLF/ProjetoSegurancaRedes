@@ -185,13 +185,7 @@ No print final dos contadores, fornecido em 13/10/2026, foram observados:
 
 Esses valores mostram passagem de tráfego pelas regras de autorização e bloqueio. O contador DROP é agregado e não identifica sozinho qual teste produziu cada pacote. Os valores variam com novas tentativas e são zerados quando as regras são reaplicadas.
 
-Antes da entrega, salvar os prints em docs/evidencias/ e inserir os links abaixo:
-
-- HTTP e teste das portas 80/81: anexar.
-- Consulta SQL do web ao banco: anexar.
-- Cliente bloqueado no banco: anexar.
-- DMZ bloqueada para o cliente: anexar.
-- Contadores FORWARD: anexar.
+Os prints estão em docs/evidencias/ e são exibidos na seção 4.6, junto aos comandos correspondentes.
 
 ### 4.6. Roteiro dos prints para a entrega
 
@@ -219,11 +213,7 @@ Esperado: client em execução; firewall, web e db healthy.
 
 Salvar como: `docs/evidencias/01-ambiente.png`.
 
-Depois de salvar a imagem, insira esta linha abaixo do resultado correspondente no README:
-
-```markdown
 ![Containers em execução](docs/evidencias/01-ambiente.png)
-```
 
 #### Print 2 — Rotas e encaminhamento
 
@@ -239,11 +229,7 @@ Esperado: Rotas para as outras redes pelo IP .2 do firewall e encaminhamento igu
 
 Salvar como: `docs/evidencias/02-rotas.png`.
 
-Depois de salvar a imagem, insira esta linha abaixo do resultado correspondente no README:
-
-```markdown
 ![Rotas e encaminhamento](docs/evidencias/02-rotas.png)
-```
 
 #### Print 3 — Cliente acessando o web
 
@@ -256,11 +242,7 @@ Esperado: HTML da página.
 
 Salvar como: `docs/evidencias/03-http.png`.
 
-Depois de salvar a imagem, insira esta linha abaixo do resultado correspondente no README:
-
-```markdown
 ![Cliente acessando o web](docs/evidencias/03-http.png)
-```
 
 #### Print 4 — Portas do web
 
@@ -273,11 +255,7 @@ Esperado: 80 open e 81 filtered.
 
 Salvar como: `docs/evidencias/04-portas-web.png`.
 
-Depois de salvar a imagem, insira esta linha abaixo do resultado correspondente no README:
-
-```markdown
 ![Portas do web](docs/evidencias/04-portas-web.png)
-```
 
 #### Print 5 — Web consultando o banco
 
@@ -290,11 +268,7 @@ Esperado: seguranca, aluno e 172.22.0.10.
 
 Salvar como: `docs/evidencias/05-banco-permitido.png`.
 
-Depois de salvar a imagem, insira esta linha abaixo do resultado correspondente no README:
-
-```markdown
 ![Web consultando o banco](docs/evidencias/05-banco-permitido.png)
-```
 
 #### Print 6 — Cliente bloqueado no banco
 
@@ -307,11 +281,7 @@ Esperado: 5432 filtered.
 
 Salvar como: `docs/evidencias/06-banco-bloqueado.png`.
 
-Depois de salvar a imagem, insira esta linha abaixo do resultado correspondente no README:
-
-```markdown
 ![Cliente bloqueado no banco](docs/evidencias/06-banco-bloqueado.png)
-```
 
 #### Print 7 — DMZ bloqueada para o cliente
 
@@ -324,11 +294,7 @@ Esperado: 80 filtered.
 
 Salvar como: `docs/evidencias/07-dmz-cliente.png`.
 
-Depois de salvar a imagem, insira esta linha abaixo do resultado correspondente no README:
-
-```markdown
 ![DMZ bloqueada para o cliente](docs/evidencias/07-dmz-cliente.png)
-```
 
 #### Print 8 — Contadores finais
 
@@ -341,11 +307,7 @@ Esperado: Contadores positivos nas duas regras específicas de autorização, em
 
 Salvar como: `docs/evidencias/08-contadores.png`.
 
-Depois de salvar a imagem, insira esta linha abaixo do resultado correspondente no README:
-
-```markdown
 ![Contadores finais](docs/evidencias/08-contadores.png)
-```
 
 #### Enviar as evidências ao GitHub
 
@@ -357,7 +319,7 @@ git commit -m "Adiciona evidencias dos testes de rede e firewall"
 git push origin main
 ```
 
-As imagens só aparecerão para o professor quando também estiverem no GitHub. Os blocos Markdown acima são modelos de inserção, não indicam que as imagens já foram anexadas.
+As oito imagens estão disponíveis em docs/evidencias/ e são exibidas acima junto aos comandos de cada teste.
 
 ### 4.7. Encerramento e diagnóstico de problemas
 
