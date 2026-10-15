@@ -1,135 +1,388 @@
-## Tema
-Firewall Linux, Netfilter e Iptables utilizando Docker e Docker Compose.
+# Projeto Segurança de Redes
 
-## Objetivo
-Simular uma rede segmentada com cliente, firewall, DMZ, servidor web e banco de dados.
+Relatório Técnico — Segmentação de Rede e Firewall Linux
 
-## Rede do laboratório
+Aluno: Carlos Eduardo De Oliveira Silva.
+Disciplina: Segurança da Informação.
+Professor: Roitier.
 
-| Serviço | Rede | IP |
+## 1. Definição do Case
+
+Este trabalho considera a empresa fictícia Integra Serviços, uma pequena prestadora de serviços que precisa disponibilizar um portal de atendimento para seus funcionários. O portal representa o acesso ao sistema, enquanto um banco de dados representa o armazenamento de informações de clientes e atendimentos.
+
+Os funcionários precisam acessar o servidor web. O servidor responsável pelo sistema precisa consultar o banco, mas os computadores dos funcionários não devem acessar o banco diretamente. Também não há necessidade de o servidor web iniciar conexões para os computadores dos usuários.
+
+O laboratório representa esses papéis com containers Docker: um cliente Alpine, um firewall Alpine com iptables, um servidor Nginx e um banco PostgreSQL 16. A página do Nginx é estática; o acesso ao banco é demonstrado por uma consulta SQL executada no terminal do container web. Não foi implementado um sistema de atendimento completo.
+
+## 2. Diagnóstico: Cenário Atual vs. Proposta de Solução
+
+### Cenário atual — problemas mapeados
+
+No cenário hipotético inicial, computadores de usuários e servidores compartilham uma rede sem controle específico entre os serviços. Isso permite tentativas de acesso direto ao banco e facilita a movimentação de um equipamento comprometido para outros serviços.
+
+Os principais problemas considerados são:
+
+- Ausência de segmentação entre usuários, servidor web e banco.
+- Falta de uma política que permita apenas as conexões necessárias ao negócio.
+- Possibilidade de novas conexões do servidor web para os computadores dos usuários.
+- Dificuldade de identificar quais acessos foram permitidos ou bloqueados.
+
+Não foram medidas saturação, latência ou perda de pacotes no cenário inicial. O diagnóstico é uma hipótese de segurança para o estudo de caso, e não uma auditoria de uma empresa real.
+
+### Proposta de solução
+
+Foram criadas três redes. A rede cliente reúne os usuários; a DMZ contém o serviço web; e uma terceira rede contém o banco. A DMZ separa o serviço acessado pelos usuários dos dados e dos próprios computadores clientes. O banco permanece em uma rede própria para que seu acesso possa ser filtrado separadamente.
+
+| Rede | Sub-rede | Equipamento e IP |
 | --- | --- | --- |
-| client | Rede cliente | 172.20.0.10 |
-| firewall | Rede cliente | 172.20.0.2 |
-| firewall | DMZ | 172.21.0.2 |
-| web | DMZ | 172.21.0.10 |
-| firewall | Rede banco | 172.22.0.2 |
-| db | Rede banco | 172.22.0.10 |
+| Cliente | 172.20.0.0/24 | client: 172.20.0.10; firewall: 172.20.0.2 |
+| DMZ | 172.21.0.0/24 | web: 172.21.0.10; firewall: 172.21.0.2 |
+| Banco | 172.22.0.0/24 | db: 172.22.0.10; firewall: 172.22.0.2 |
 
-O cliente usa Alpine com curl, nmap e iproute2. O firewall usa Alpine com iptables e iproute2. O servidor web usa Nginx com uma página simples.
+Somente o firewall participa das três redes. Os demais containers participam de uma rede cada. As rotas para as outras sub-redes apontam para o firewall, incluindo as rotas de resposta.
 
-As três redes usam bridges separadas. Não usamos `internal: true`, pois o isolamento dessa opção pode bloquear os pacotes destinados à outra sub-rede antes de chegarem ao container firewall. As bridges permitem saída pelo gateway do Docker; as regras desta etapa controlam o tráfego entre cliente e DMZ. O cliente tem uma rota para a DMZ pelo firewall, e o servidor web tem a rota de volta pelo mesmo firewall. Não publicamos a porta do servidor no computador, pois o teste desta etapa deve ser feito pelo cliente.
+A política FORWARD é DROP: o tráfego encaminhado só é permitido quando corresponde a uma regra de autorização. O parâmetro net.ipv4.ip_forward=1 permite que o Linux atue como roteador.
 
-O firewall permite HTTP do cliente para o servidor web e as respostas das conexões autorizadas. Os outros encaminhamentos são bloqueados. As políticas INPUT e OUTPUT do próprio firewall continuam no padrão; nesta etapa estamos filtrando o tráfego que passa entre as redes.
+Usamos bridges comuns, sem internal: true. Durante os testes, essa opção de isolamento impediu o encaminhamento antes de os pacotes chegarem às regras do container firewall. Após recriar as redes sem essa opção, o tráfego passou pelas regras e os testes funcionaram.
 
-## Como iniciar
+O laboratório não publica portas no computador. As bridges podem ter saída pelo gateway do Docker; a política demonstrada controla os acessos entre as três sub-redes, não toda a saída à internet.
 
-Com o Docker Desktop aberto e configurado para containers Linux, execute na pasta do projeto:
+## 3. Matriz de Regras de Segurança (Firewall)
+
+As regras estão em [firewall/entrypoint.sh](firewall/entrypoint.sh) e são reaplicadas na inicialização do container.
+
+| Origem | Destino | Porta/Protocolo ou condição | Ação | Justificativa do negócio |
+| --- | --- | --- | --- | --- |
+| Participantes de conexões autorizadas | Participantes dessas conexões | ESTABLISHED,RELATED | ACCEPT | Permitir respostas e tráfego relacionado às conexões autorizadas |
+| Cliente 172.20.0.10 | Web na DMZ 172.21.0.10 | TCP 80; NEW | ACCEPT | Funcionários precisam acessar o portal |
+| Web na DMZ 172.21.0.10 | Banco 172.22.0.10 | TCP 5432; NEW | ACCEPT | O servidor do sistema precisa consultar o PostgreSQL |
+| Cliente 172.20.0.10 | Banco 172.22.0.10 | TCP 5432; nova conexão | DROP | Usuários devem acessar os dados pelo sistema, sem conexão direta ao banco |
+| Web na DMZ 172.21.0.10 | Cliente 172.20.0.10 | Novas conexões, incluindo TCP 80 | DROP | O serviço web não precisa iniciar conexões para computadores dos funcionários |
+| Cliente 172.20.0.10 | Web na DMZ 172.21.0.10 | TCP 81; nova conexão | DROP | A porta não faz parte do serviço autorizado |
+| Qualquer origem encaminhada | Qualquer destino | Demais pacotes | DROP | Aplicar o princípio de permitir somente o necessário |
+
+As linhas de bloqueio específicas descrevem os efeitos da regra final DROP e da política padrão; não existem regras DROP separadas para cada par de endereços. A regra final também contabiliza os bloqueios.
+
+A autorização usa os IPs dos containers do laboratório, não toda a sub-rede. INPUT e OUTPUT do próprio firewall permanecem no padrão. Nesta implementação não há HTTPS nem autorização da porta 443: o serviço demonstrado é HTTP na porta 80.
+
+## 4. Metodologia de Testes e Validação
+
+### 4.1. Preparação e inicialização
+
+O avaliador deve ter Git, Docker e Docker Compose disponíveis. No Windows, o Docker Desktop deve estar aberto e configurado para containers Linux.
+
+Para obter o projeto:
 
 ```sh
-git pull origin main
+git clone https://github.com/KaduDLF/ProjetoSegurancaRedes.git
+cd ProjetoSegurancaRedes
+```
+
+Se já houver uma cópia local, atualizar com git pull origin main.
+
+Na pasta do projeto:
+
+```sh
 docker compose config
 docker compose up -d --build
 docker compose ps
 ```
 
-O Compose espera o firewall aplicar as regras e o Nginx responder antes de iniciar o cliente. Não usamos nomes fixos de containers, então os containers de teste anteriores não entram em conflito com os serviços do Compose.
+O firewall, o banco e o web devem ficar healthy, e o cliente deve ficar em execução. O Compose aguarda a aplicação das regras, a disponibilidade do banco e a resposta local do Nginx.
 
-A permissão NET_ADMIN permite configurar as rotas e o iptables. O encaminhamento IPv4 é habilitado pelo sysctl do Compose. O Dockerfile do firewall corrige as quebras de linha do script para funcionar também quando o projeto é baixado no Windows.
+O banco usa o usuário aluno, o banco seguranca e uma senha de demonstração definida no Compose. DB_PASSWORD pode ser definida no arquivo .env antes da primeira inicialização. Os dados são persistidos no volume dados_banco.
 
-Se o Docker informar que uma sub-rede já está em uso, confira as redes existentes com `docker network ls`. Ao mudar os endereços do laboratório, atualize também as rotas e as regras do firewall.
-
-## Atualização das redes
-
-Após uma alteração nas opções das redes, recrie o laboratório:
+### 4.2. Conferir as rotas e o encaminhamento
 
 ```sh
-git pull origin main
-docker compose down
-docker compose up -d --build
+docker compose exec client ip route
+docker compose exec web ip route
+docker compose exec db ip route
+docker compose exec firewall cat /proc/sys/net/ipv4/ip_forward
+docker compose exec firewall iptables -L FORWARD -n -v
 ```
 
-O comando down remove os containers e as redes deste Compose, que serão recriados pelo up.
+O cliente deve alcançar as redes 172.21.0.0/24 e 172.22.0.0/24 pelo gateway 172.20.0.2. O web deve alcançar cliente e banco pelo 172.21.0.2. O banco deve alcançar cliente e DMZ pelo 172.22.0.2. ip_forward deve retornar 1.
 
-## Testes
+Para comparar os testes, registrar os contadores antes e depois de cada tentativa. Opcionalmente, zerar somente os contadores FORWARD antes de cada teste:
 
-### Acesso permitido
+```sh
+docker compose exec firewall iptables -Z FORWARD
+```
+
+Esse comando não remove nem altera as regras.
+
+### 4.3. Testes positivos
+
+**Cliente acessando o portal:**
 
 ```sh
 docker compose exec client curl --noproxy "*" --max-time 5 http://172.21.0.10
 ```
 
-Deve aparecer o HTML da página do projeto.
+Resultado esperado: HTML da página do projeto. O IP é usado porque cliente e web estão em redes distintas e o nome do web não é compartilhado pelo DNS dessas redes.
 
-### Portas permitidas e bloqueadas
-
-```sh
-docker compose exec client nmap -sT -Pn -n -p 80,81 --reason --max-retries 1 --host-timeout 20s 172.21.0.10
-```
-
-A porta 80 deve aparecer como `open` e a 81 como `filtered`. Usamos -Pn porque o firewall não libera as sondagens de descoberta do nmap. A porta 81 não tem serviço: sem o bloqueio ela responderia como fechada; com DROP, a tentativa fica sem resposta.
-
-### Comprovar a passagem pelo firewall
-
-```sh
-docker compose exec firewall iptables -L FORWARD -n -v
-docker compose exec firewall cat /proc/sys/net/ipv4/ip_forward
-docker compose exec client ip route
-docker compose exec web ip route
-```
-
-Depois dos testes, os contadores das regras de HTTP, de respostas e de DROP devem aumentar. O encaminhamento IPv4 deve mostrar 1. Guarde as saídas para o relatório.
-
-Para consultar erros:
-
-```sh
-docker compose logs firewall web client
-```
-
-Para encerrar o laboratório:
-
-```sh
-docker compose down
-```
-
-## Banco de dados
-
-Usamos PostgreSQL 16 em uma terceira rede. Somente o servidor web pode iniciar conexões TCP para o banco na porta 5432. O cliente tem uma rota até essa rede para comprovar o bloqueio pelo firewall.
-
-O usuário aluno e a senha padrão senha_laboratorio são dados de demonstração. Você pode definir DB_PASSWORD em um arquivo .env antes da primeira inicialização. A mesma variável é usada pelo banco e pelo cliente PostgreSQL instalado no web. Alterar essa variável depois não muda a senha de um banco que já foi inicializado no volume.
-
-O volume dados_banco mantém os dados ao executar docker compose down. Nenhuma porta do banco é publicada no computador.
-
-O Nginx continua servindo uma página estática. O teste SQL é executado pelo terminal do container web para demonstrar o acesso autorizado; a página não consulta o banco.
-
-### Acesso permitido do web ao banco
+**Servidor web acessando o banco:**
 
 ```sh
 docker compose exec web psql -c "SELECT current_database(), current_user, inet_server_addr();"
 ```
 
-Esperado: seguranca, aluno e 172.22.0.10. Esse comando comprova conexão e autenticação, além da porta aberta.
+Resultado esperado: seguranca, aluno e 172.22.0.10. Esse teste verifica conexão e autenticação no banco a partir do container web.
 
-### Cliente bloqueado no banco
+### 4.4. Testes negativos
+
+**Porta não autorizada no servidor web:**
+
+```sh
+docker compose exec client nmap -sT -Pn -n -p 80,81 --reason --max-retries 1 --host-timeout 20s 172.21.0.10
+```
+
+Esperado: 80/tcp open e 81/tcp filtered.
+
+**Acesso direto do cliente ao banco:**
 
 ```sh
 docker compose exec client nmap -sT -Pn -n -p 5432 --reason --max-retries 1 --host-timeout 20s 172.22.0.10
 ```
 
-Esperado: 5432 filtered. Depois confira o contador DROP do firewall.
+Esperado: 5432/tcp filtered.
 
-### Novas conexões da DMZ para o cliente bloqueadas
+**Nova conexão da DMZ para o cliente:**
 
 ```sh
 docker compose exec web nmap -sT -Pn -n -p 80 --reason --max-retries 1 --host-timeout 20s 172.20.0.10
+```
+
+Esperado: 80/tcp filtered.
+
+A opção -Pn evita depender das sondagens de descoberta, que não foram autorizadas. As portas 81 do web e 80 do cliente não possuem um serviço configurado: sem o bloqueio, responderiam como closed. Com DROP, as tentativas ficam sem resposta e são identificadas como filtered. Por isso, o resultado do nmap deve ser acompanhado dos contadores do firewall.
+
+### 4.5. Evidências e resultados obtidos
+
+Após cada teste:
+
+```sh
 docker compose exec firewall iptables -L FORWARD -n -v
 ```
 
-Esperado: 80 filtered. O cliente não tem um servidor nessa porta; sem DROP ela retornaria closed. As respostas ao HTTP autorizado continuam permitidas por ESTABLISHED,RELATED.
+| Teste | Resultado esperado | Evidência disponível |
+| --- | --- | --- |
+| Cliente para HTTP do web | HTML e TCP 80 open | Confirmado por print em 11/10/2026 |
+| Cliente para TCP 81 do web | filtered | Confirmado no mesmo print |
+| Consulta SQL pelo web | seguranca, aluno, 172.22.0.10 | Execução informada como bem-sucedida pelo responsável; anexar saída SQL |
+| Cliente para banco TCP 5432 | filtered | Execução informada como bem-sucedida pelo responsável; anexar saída do nmap |
+| DMZ para cliente TCP 80 | filtered | Confirmado por print em 13/10/2026 |
 
-### Evidências e relatório
+No print final dos contadores, fornecido em 13/10/2026, foram observados:
 
-O arquivo docs/relatorio.md reúne a arquitetura, as regras e os resultados já confirmados. Os testes novos estão marcados como pendentes até sua execução. Salve os prints em docs/evidencias/ e atualize os resultados após conferir as saídas.
+| Regra | Pacotes | Bytes |
+| --- | --- | --- |
+| ESTABLISHED,RELATED | 29 | 3410 |
+| HTTP do cliente para web | 1 | 60 |
+| PostgreSQL do web para banco | 1 | 60 |
+| DROP final | 4 | 240 |
 
-Referência do banco: [imagem oficial PostgreSQL](https://github.com/docker-library/docs/blob/master/postgres/README.md).
+Esses valores mostram passagem de tráfego pelas regras de autorização e bloqueio. O contador DROP é agregado e não identifica sozinho qual teste produziu cada pacote. Os valores variam com novas tentativas e são zerados quando as regras são reaplicadas.
 
-Referências: [serviços do Compose](https://docs.docker.com/reference/compose-file/services/) e [redes do Compose](https://docs.docker.com/reference/compose-file/networks/).
+Antes da entrega, salvar os prints em docs/evidencias/ e inserir os links abaixo:
+
+- HTTP e teste das portas 80/81: anexar.
+- Consulta SQL do web ao banco: anexar.
+- Cliente bloqueado no banco: anexar.
+- DMZ bloqueada para o cliente: anexar.
+- Contadores FORWARD: anexar.
+
+### 4.6. Roteiro dos prints para a entrega
+
+Execute a preparação uma única vez no PowerShell, dentro da pasta do projeto, com o Docker Desktop aberto:
+
+```powershell
+git pull origin main
+docker compose up -d --build
+New-Item -ItemType Directory -Force docs/evidencias
+docker compose exec firewall iptables -Z FORWARD
+```
+
+O último comando zera somente os contadores para iniciar esta rodada. Não o repita entre os prints, pois a última imagem deve mostrar a soma dos testes. Evite reiniciar o firewall durante a coleta.
+
+Para cada etapa abaixo, execute Clear-Host, rode os comandos e tire o print com o comando e sua saída visíveis. Salve a imagem com o nome indicado em docs/evidencias/. Se a saída não couber, aumente o terminal ou divida a imagem e ajuste o link. Registre a saída real; se ela diferir do esperado, investigue antes de concluir o teste.
+
+#### Print 1 — Containers em execução
+
+```powershell
+Clear-Host
+docker compose ps
+```
+
+Esperado: client em execução; firewall, web e db healthy.
+
+Salvar como: `docs/evidencias/01-ambiente.png`.
+
+Depois de salvar a imagem, insira esta linha abaixo do resultado correspondente no README:
+
+```markdown
+![Containers em execução](docs/evidencias/01-ambiente.png)
+```
+
+#### Print 2 — Rotas e encaminhamento
+
+```powershell
+Clear-Host
+docker compose exec client ip route
+docker compose exec web ip route
+docker compose exec db ip route
+docker compose exec firewall cat /proc/sys/net/ipv4/ip_forward
+```
+
+Esperado: Rotas para as outras redes pelo IP .2 do firewall e encaminhamento igual a 1.
+
+Salvar como: `docs/evidencias/02-rotas.png`.
+
+Depois de salvar a imagem, insira esta linha abaixo do resultado correspondente no README:
+
+```markdown
+![Rotas e encaminhamento](docs/evidencias/02-rotas.png)
+```
+
+#### Print 3 — Cliente acessando o web
+
+```powershell
+Clear-Host
+docker compose exec client curl --noproxy "*" --max-time 5 http://172.21.0.10
+```
+
+Esperado: HTML da página.
+
+Salvar como: `docs/evidencias/03-http.png`.
+
+Depois de salvar a imagem, insira esta linha abaixo do resultado correspondente no README:
+
+```markdown
+![Cliente acessando o web](docs/evidencias/03-http.png)
+```
+
+#### Print 4 — Portas do web
+
+```powershell
+Clear-Host
+docker compose exec client nmap -sT -Pn -n -p 80,81 --reason --max-retries 1 --host-timeout 20s 172.21.0.10
+```
+
+Esperado: 80 open e 81 filtered.
+
+Salvar como: `docs/evidencias/04-portas-web.png`.
+
+Depois de salvar a imagem, insira esta linha abaixo do resultado correspondente no README:
+
+```markdown
+![Portas do web](docs/evidencias/04-portas-web.png)
+```
+
+#### Print 5 — Web consultando o banco
+
+```powershell
+Clear-Host
+docker compose exec web psql -P pager=off -c "SELECT current_database(), current_user, inet_server_addr();"
+```
+
+Esperado: seguranca, aluno e 172.22.0.10.
+
+Salvar como: `docs/evidencias/05-banco-permitido.png`.
+
+Depois de salvar a imagem, insira esta linha abaixo do resultado correspondente no README:
+
+```markdown
+![Web consultando o banco](docs/evidencias/05-banco-permitido.png)
+```
+
+#### Print 6 — Cliente bloqueado no banco
+
+```powershell
+Clear-Host
+docker compose exec client nmap -sT -Pn -n -p 5432 --reason --max-retries 1 --host-timeout 20s 172.22.0.10
+```
+
+Esperado: 5432 filtered.
+
+Salvar como: `docs/evidencias/06-banco-bloqueado.png`.
+
+Depois de salvar a imagem, insira esta linha abaixo do resultado correspondente no README:
+
+```markdown
+![Cliente bloqueado no banco](docs/evidencias/06-banco-bloqueado.png)
+```
+
+#### Print 7 — DMZ bloqueada para o cliente
+
+```powershell
+Clear-Host
+docker compose exec web nmap -sT -Pn -n -p 80 --reason --max-retries 1 --host-timeout 20s 172.20.0.10
+```
+
+Esperado: 80 filtered.
+
+Salvar como: `docs/evidencias/07-dmz-cliente.png`.
+
+Depois de salvar a imagem, insira esta linha abaixo do resultado correspondente no README:
+
+```markdown
+![DMZ bloqueada para o cliente](docs/evidencias/07-dmz-cliente.png)
+```
+
+#### Print 8 — Contadores finais
+
+```powershell
+Clear-Host
+docker compose exec firewall iptables -L FORWARD -n -v
+```
+
+Esperado: Contadores positivos nas duas regras específicas de autorização, em respostas e em DROP. Os números não precisam ser iguais aos prints antigos.
+
+Salvar como: `docs/evidencias/08-contadores.png`.
+
+Depois de salvar a imagem, insira esta linha abaixo do resultado correspondente no README:
+
+```markdown
+![Contadores finais](docs/evidencias/08-contadores.png)
+```
+
+#### Enviar as evidências ao GitHub
+
+Após inserir as linhas das imagens no README e salvar o arquivo:
+
+```powershell
+git add README.md docs/evidencias
+git commit -m "Adiciona evidencias dos testes de rede e firewall"
+git push origin main
+```
+
+As imagens só aparecerão para o professor quando também estiverem no GitHub. Os blocos Markdown acima são modelos de inserção, não indicam que as imagens já foram anexadas.
+
+### 4.7. Encerramento e diagnóstico de problemas
+
+Para consultar os logs:
+
+```sh
+docker compose logs firewall web db client
+```
+
+Para encerrar:
+
+```sh
+docker compose down
+```
+
+Esse comando preserva o volume do banco. Se as opções das redes forem alteradas, executar down e depois up -d --build para recriá-las.
+
+## Considerações finais
+
+Os testes confirmaram o acesso HTTP e o bloqueio de conexões não autorizadas. O acesso ao banco e seu bloqueio para o cliente foram informados como bem-sucedidos, e o contador da regra PostgreSQL registrou tráfego. As saídas desses dois testes ainda precisam ser anexadas ao documento.
+
+A solução demonstra segmentação e filtragem de encaminhamento. A página é estática, as credenciais são de laboratório e os containers recebem NET_ADMIN para configurar rotas. Uma implantação real precisaria de medidas adicionais, como HTTPS, proteção das credenciais e redução de permissões.
+
+## Referências
+
+- [Docker Compose — serviços](https://docs.docker.com/reference/compose-file/services/)
+- [Docker Compose — redes](https://docs.docker.com/reference/compose-file/networks/)
+- [Imagem oficial PostgreSQL](https://github.com/docker-library/docs/blob/master/postgres/README.md)
