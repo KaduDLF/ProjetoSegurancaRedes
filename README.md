@@ -8,11 +8,11 @@ Professor: Roitier.
 
 ## 1. Definição do Case
 
-Este trabalho considera a empresa fictícia Integra Serviços, uma pequena prestadora de serviços que precisa disponibilizar um portal de atendimento para seus funcionários. O portal representa o acesso ao sistema, enquanto um banco de dados representa o armazenamento de informações de clientes e atendimentos.
+Esse trabalho considera a empresa fictícia Integra Serviços, uma pequena prestadora de serviços que precisa disponibilizar um sistema de atendimento para seus funcionários. O sistema representa o acesso , enquanto um banco de dados representa o armazenamento de informações de clientes e os atendimentos.
 
-Os funcionários precisam acessar o servidor web. O servidor responsável pelo sistema precisa consultar o banco, mas os computadores dos funcionários não devem acessar o banco diretamente. Também não há necessidade de o servidor web iniciar conexões para os computadores dos usuários.
+Os funcionários precisam acessar o servidor web. O servidor responsável pelo sistema precisa consultar o banco, mas os computadores dos funcionários não devem acessar o banco diretamente. Também não tem necessidade do servidor web iniciar conexões para o computadores dos usuários.
 
-O laboratório representa esses papéis com containers Docker: um cliente Alpine, um firewall Alpine com iptables, um servidor Nginx e um banco PostgreSQL 16. A página do Nginx é estática; o acesso ao banco é demonstrado por uma consulta SQL executada no terminal do container web. Não foi implementado um sistema de atendimento completo.
+O laboratório representa esses papéis com containers Docker: um cliente Alpine, um firewall Alpine com iptables, um servidor Nginx e um banco PostgreSQL. A página do Nginx é estática; o acesso ao banco é demonstrado por uma consulta SQL executada no terminal do container web.
 
 ## 2. Diagnóstico: Cenário Atual vs. Proposta de Solução
 
@@ -187,20 +187,8 @@ Esses valores mostram passagem de tráfego pelas regras de autorização e bloqu
 
 Os prints estão em docs/evidencias/ e são exibidos na seção 4.6, junto aos comandos correspondentes.
 
-### 4.6. Roteiro dos prints para a entrega
+### 4.6. Prints dos testes
 
-Execute a preparação uma única vez no PowerShell, dentro da pasta do projeto, com o Docker Desktop aberto:
-
-```powershell
-git pull origin main
-docker compose up -d --build
-New-Item -ItemType Directory -Force docs/evidencias
-docker compose exec firewall iptables -Z FORWARD
-```
-
-O último comando zera somente os contadores para iniciar esta rodada. Não o repita entre os prints, pois a última imagem deve mostrar a soma dos testes. Evite reiniciar o firewall durante a coleta.
-
-Para cada etapa abaixo, execute Clear-Host, rode os comandos e tire o print com o comando e sua saída visíveis. Salve a imagem com o nome indicado em docs/evidencias/. Se a saída não couber, aumente o terminal ou divida a imagem e ajuste o link. Registre a saída real; se ela diferir do esperado, investigue antes de concluir o teste.
 
 #### Print 1 — Containers em execução
 
@@ -211,7 +199,7 @@ docker compose ps
 
 Esperado: client em execução; firewall, web e db healthy.
 
-Salvar como: `docs/evidencias/01-ambiente.png`.
+
 
 ![Containers em execução](docs/evidencias/01-ambiente.png)
 
@@ -227,7 +215,7 @@ docker compose exec firewall cat /proc/sys/net/ipv4/ip_forward
 
 Esperado: Rotas para as outras redes pelo IP .2 do firewall e encaminhamento igual a 1.
 
-Salvar como: `docs/evidencias/02-rotas.png`.
+
 
 ![Rotas e encaminhamento](docs/evidencias/02-rotas.png)
 
@@ -240,7 +228,6 @@ docker compose exec client curl --noproxy "*" --max-time 5 http://172.21.0.10
 
 Esperado: HTML da página.
 
-Salvar como: `docs/evidencias/03-http.png`.
 
 ![Cliente acessando o web](docs/evidencias/03-http.png)
 
@@ -253,7 +240,6 @@ docker compose exec client nmap -sT -Pn -n -p 80,81 --reason --max-retries 1 --h
 
 Esperado: 80 open e 81 filtered.
 
-Salvar como: `docs/evidencias/04-portas-web.png`.
 
 ![Portas do web](docs/evidencias/04-portas-web.png)
 
@@ -266,7 +252,6 @@ docker compose exec web psql -P pager=off -c "SELECT current_database(), current
 
 Esperado: seguranca, aluno e 172.22.0.10.
 
-Salvar como: `docs/evidencias/05-banco-permitido.png`.
 
 ![Web consultando o banco](docs/evidencias/05-banco-permitido.png)
 
@@ -279,7 +264,6 @@ docker compose exec client nmap -sT -Pn -n -p 5432 --reason --max-retries 1 --ho
 
 Esperado: 5432 filtered.
 
-Salvar como: `docs/evidencias/06-banco-bloqueado.png`.
 
 ![Cliente bloqueado no banco](docs/evidencias/06-banco-bloqueado.png)
 
@@ -292,7 +276,6 @@ docker compose exec web nmap -sT -Pn -n -p 80 --reason --max-retries 1 --host-ti
 
 Esperado: 80 filtered.
 
-Salvar como: `docs/evidencias/07-dmz-cliente.png`.
 
 ![DMZ bloqueada para o cliente](docs/evidencias/07-dmz-cliente.png)
 
@@ -305,19 +288,13 @@ docker compose exec firewall iptables -L FORWARD -n -v
 
 Esperado: Contadores positivos nas duas regras específicas de autorização, em respostas e em DROP. Os números não precisam ser iguais aos prints antigos.
 
-Salvar como: `docs/evidencias/08-contadores.png`.
+
 
 ![Contadores finais](docs/evidencias/08-contadores.png)
 
-#### Enviar as evidências ao GitHub
+#### Evidências 
 
-Após inserir as linhas das imagens no README e salvar o arquivo:
 
-```powershell
-git add README.md docs/evidencias
-git commit -m "Adiciona evidencias dos testes de rede e firewall"
-git push origin main
-```
 
 As oito imagens estão disponíveis em docs/evidencias/ e são exibidas acima junto aos comandos de cada teste.
 
@@ -341,10 +318,5 @@ Esse comando preserva o volume do banco. Se as opções das redes forem alterada
 
 Os testes confirmaram o acesso HTTP e o bloqueio de conexões não autorizadas. O acesso ao banco e seu bloqueio para o cliente foram informados como bem-sucedidos, e o contador da regra PostgreSQL registrou tráfego. As saídas desses dois testes ainda precisam ser anexadas ao documento.
 
-A solução demonstra segmentação e filtragem de encaminhamento. A página é estática, as credenciais são de laboratório e os containers recebem NET_ADMIN para configurar rotas. Uma implantação real precisaria de medidas adicionais, como HTTPS, proteção das credenciais e redução de permissões.
+A solução demonstra segmentação e filtragem de encaminhamento. A página é estática, as credenciais são de laboratório e os containers recebem NET_ADMIN para configurar rotas.
 
-## Referências
-
-- [Docker Compose — serviços](https://docs.docker.com/reference/compose-file/services/)
-- [Docker Compose — redes](https://docs.docker.com/reference/compose-file/networks/)
-- [Imagem oficial PostgreSQL](https://github.com/docker-library/docs/blob/master/postgres/README.md)
